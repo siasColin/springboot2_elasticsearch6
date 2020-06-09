@@ -1,0 +1,7 @@
+spring:
+  data:
+    elasticsearch:
+      cluster-name: my-application
+      cluster-nodes: 192.168.253.130:9300
+      index:
+        blog: blog_index
