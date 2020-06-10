@@ -20,10 +20,13 @@ import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.elasticsearch.core.ElasticsearchTemplate;
 import org.springframework.data.elasticsearch.core.query.FetchSourceFilter;
 import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilder;
 import org.springframework.data.elasticsearch.core.query.SearchQuery;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -64,14 +67,18 @@ public class TestController {
 
     @RequestMapping(value = "/findAll")
     public Object findAll(){
-        // 通过查询构建器构建查询条件
-        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("title", "手机");
         //执行查询
         Iterable<BlogPost> blogPosts = this.blogPostRepository.findAll();
         //Pageable pageable = PageRequest.of(param.getPageNum(), param.getPageSize(), Sort.Direction.ASC, "orderNo");
         return blogPosts;
     }
 
+    /**
+     * match
+     *      模糊匹配(title会分词检索)
+     * @param title
+     * @return
+     */
     @RequestMapping(value = "/searchByTitle")
     public Object search(String title){
         // 词条查询
@@ -80,6 +87,65 @@ public class TestController {
         Iterable<BlogPost> blogPosts = this.blogPostRepository.search(queryBuilder);
         return blogPosts;
     }
+
+    /**
+     * matchPhrase
+     *      短语模糊匹配(title作为一个完整的短语进行检索)
+     * @param title
+     * @return
+     */
+    @RequestMapping(value = "/matchPhraseQueryByTitle")
+    public Object matchPhraseQueryByTitle(String title,
+                                          @PageableDefault(page = 0, size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable){
+        BoolQueryBuilder bq = QueryBuilders.boolQuery();
+        bq.must(QueryBuilders.matchPhraseQuery("title", title));
+        // 执行查询
+        Page<BlogPost> blogPosts = this.blogPostRepository.search(bq,pageable);
+        return blogPosts;
+    }
+
+    /**
+     * termQuery
+     * 完全匹配查询
+     *      检索字段映射type需要是keyword，避免term对text字段使用查询。
+     * @param tag
+     * @param pageable
+     * @return
+     */
+    @RequestMapping(value = "/termQueryByTag")
+    public Object termQueryByTitle(String tag,
+                                          @PageableDefault(page = 0, size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable){
+        BoolQueryBuilder bq = QueryBuilders.boolQuery();
+        bq.must(QueryBuilders.termQuery("tags", tag));
+        // 执行查询
+        Page<BlogPost> blogPosts = this.blogPostRepository.search(bq,pageable);
+        return blogPosts;
+    }
+
+    /**
+     * rangeQuery
+     * 范围查询
+     * @return
+     */
+    @RequestMapping("/rangeQuery")
+    public Iterable<BlogPost> rangeQuery(){
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+
+        BoolQueryBuilder nestedBoolQuery = QueryBuilders.boolQuery();
+        /**
+         * gt 大于
+         * gte 大于等于
+         * lt 小于
+         * lte 小于等于
+         */
+        nestedBoolQuery.must(QueryBuilders.rangeQuery("comments.stars").gt(100));
+        boolQuery.must(QueryBuilders.nestedQuery("comments",nestedBoolQuery, ScoreMode.Max));
+        // 执行查询
+        Iterable<BlogPost> blogPosts = this.blogPostRepository.search(boolQuery);
+        return  blogPosts;
+    }
+
+
 
     @RequestMapping(value = "/nativeQueryByTitle")
     public Object nativeQuery(String title){
@@ -200,39 +266,6 @@ public class TestController {
         });
         return listMap;
     }
-
-    @RequestMapping(value = "/geopoint")
-    public Object geopoint(){
-        GeoDistanceQueryBuilder builder =
-                QueryBuilders.geoDistanceQuery("location")//查询字段
-                        .point(40.722,-73.989)//设置经纬度
-                        .distance(100000, DistanceUnit.METERS)//设置距离和单位（米）
-                        .geoDistance(GeoDistance.ARC);
-        GeoDistanceSortBuilder sortBuilder =
-                SortBuilders.geoDistanceSort("location",40.722,-73.989)
-                        .unit(DistanceUnit.METERS)
-                        .order(SortOrder.ASC);//排序方式
-        //构造查询条件
-        NativeSearchQueryBuilder nativeSearchQueryBuilder =
-                new NativeSearchQueryBuilder()
-                        .withFilter(builder)
-                        .withSort(sortBuilder);
-        List<Map> listMap =this.elasticsearchTemplate.query(nativeSearchQueryBuilder.build(), response -> {
-            SearchHits hits = response.getHits();
-            List<Map> list=new ArrayList<>();
-            Arrays.stream(hits.getHits()).forEach(h -> {
-                Map<String, Object> source = h.getSourceAsMap();
-                /*double targetlat = Double.parseDouble(source.get("location").toString().split(",")[0]);
-                double targetlon = Double.parseDouble(source.get("location").toString().split(",")[1]);*/
-                double calculate = GeoDistance.ARC.calculate(40.719, -73.983, 40.722,-73.989, DistanceUnit.METERS);
-                source.put("distance",calculate);
-                list.add(source);
-            });
-            return list;
-        });
-        return listMap;
-    }
-
 
 
     /**
