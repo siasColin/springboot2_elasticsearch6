@@ -8,7 +8,7 @@
 
 #### 2.1、下载或者直接使用本教程安装包下的安装文件elasticsearch-6.4.2.tar.gz
 
-![elasticsearch6.4.2.png](images/elasticsearch6.4.2.png)
+![elasticsearch6.4.2.png](https://github.com/siasColin/springboot2_elasticsearch6/tree/master/doc/images/elasticsearch6.4.2.png)
 
 #### 2.2、将下载的zip包移动到/usr/local并解压
 
