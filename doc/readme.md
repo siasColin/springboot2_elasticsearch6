@@ -794,3 +794,513 @@ GET /attractions/restaurant/_search
 }}}
 ```
 
+
+
+
+
+### 七、logstash+logback+elasticsearch
+
+#### 7.1、安装配置logstash
+
+- 下载和elasticsearch一致版本的logstash
+
+  [下载地址](https://www.elastic.co/cn/downloads/past-releases#logstash)
+
+  这里选择 Logstash 6.4.2
+
+  > logstash-6.4.2.tar.gz
+
+- 上传logstash-6.4.2.tar.gz至 /usr/local 目录，并执行以下命令解压
+
+  ```shell
+  tar -zxvf logstash-6.4.2.tar.gz
+  #使用安装es时创建的用户，并授权
+  chown -R esuser:esgroup /usr/local/logstash-6.4.2
+  #切换用户
+  su esuser
+  ```
+
+  
+
+- 创建一个配置文件 *.conf
+
+  > 在bin目录（也可以是其他目录，logstash启动时指定对应的路径即可），创建 log-es.conf 内容如下：
+
+  ```properties
+  input {
+      tcp {
+      mode => "server"
+      host => "192.168.253.130"
+      port => 7000
+      codec => json_lines
+    }
+  
+  }
+  output {
+      elasticsearch {
+          hosts => ["192.168.253.130:9200"]
+      }
+      stdout{
+         codec => json_lines
+      }
+  }
+  
+  ```
+
+- 启动 logstash
+
+  ```shell
+  cd /usr/local/logstash-6.4.2/bin
+  ./logstash -f log-es.conf --config.reload.automatic
+  # 后台运行
+  nohup ./logstash -f log-es.conf --config.reload.automatic &
+  ```
+
+#### 7.2、使用logback的项目中添加配置
+
+- 使用 logback 的项目中引入依赖
+
+  ```xml
+          <dependency>
+              <groupId>net.logstash.logback</groupId>
+              <artifactId>logstash-logback-encoder</artifactId>
+              <version>4.10</version>
+          </dependency>
+  ```
+
+  
+
+- logback.xml
+
+  ```xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!--该日志将日志级别不同的log信息保存到不同的文件中 -->
+  <configuration scan="true" scanPeriod="60 seconds" debug="true">
+  
+      <contextName>logstash-test</contextName>
+         <!-- 这个是控制台日志输出格式 方便调试对比-->
+      <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+          <encoder>
+              <pattern>%d{yyyy-MM-dd HH:mm:ss} %contextName %-5level %logger{50} -%msg%n</pattern>
+          </encoder>
+      </appender>
+      <appender name="stash" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+          <!--  这是是logstash服务器地址 端口-->
+          <destination>192.168.253.130:7000</destination>
+          <!--输出的格式，推荐使用这个-->
+          <encoder charset="UTF-8" class="net.logstash.logback.encoder.LogstashEncoder">
+              <providers>
+                  <version/>
+                  <message/>
+                  <loggerName/>
+                  <threadName/>
+                  <logLevel/>
+                  <callerData/>
+              </providers>
+          </encoder>
+      </appender>
+      <logger name="com.colin.es.controller" level="info" />
+      <logger name="com.colin.es.service" level="info" />
+      <root level="error">
+          <appender-ref ref="console"/>
+          <appender-ref ref="stash"/>
+      </root>
+  </configuration>
+  ```
+
+- 项目中输出日志
+
+  ![logback](images/logback.png)
+
+- 查看logstash控制台输出
+
+  ![logstash](images/logstash.png)
+
+#### 7.3、使用kibana进行简单的分析
+
+- 配置一个 Index Patterns
+
+![kibana-management](images/kibana-management.png)
+
+- 输入index 名称，可使用通配符，由于logstash自动创建的index名字默认是 logstash-2020.07.06  这种格式的，所以这里直接配置 logstash-* ,然后点 Next step
+
+![indexPattern](images/indexPattern.png)
+
+- Filter 选择时间戳 , 点击 create index pattern
+
+![indexPattern-filter](images/indexPattern-filter.png)
+
+![indexPattern-result](images/indexPattern-result.png)
+
+- Discover 数据探索模块
+
+  访问7.2中的项目，模拟日志输入：http://192.168.0.135:8080/findAll
+
+  然后点击Discover
+
+  - 可以访问与选定索引模式匹配的每个索引中的每个文档。
+  - 可以提交搜索请求、过滤搜索结果、查看文档数据。
+  - 还可以看到与搜索查询匹配的文档数，并获取字段值的统计信息。
+  - 如果索引模式中配置了时间字段，您还可以在这个页面的顶部看到基于时间分布的文档数量柱状图。
+
+  ![Discover](images/Discover.png)
+
+#### 7.4、结果分析
+
+​	以上配置后，存入es中数据如下:
+
+![es-logs](images/es-logs.png)
+
+```json
+{
+  "took": 2,
+  "timed_out": false,
+  "_shards": {
+    "total": 5,
+    "successful": 5,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": 39,
+    "max_score": 1,
+    "hits": [
+      {
+        "_index": "logstash-2020.07.06",
+        "_type": "doc",
+        "_id": "KkReI3MBGmQkdl0oiE01",
+        "_score": 1,
+        "_source": {
+          "@version": 1,
+          "message": "error级别日志",
+          "thread_name": "http-nio-8080-exec-3",
+          "@timestamp": "2020-07-06T09:04:24.510Z",
+          "level_value": 40000,
+          "host": "192.168.253.1",
+          "level": "ERROR",
+          "logger_name": "com.colin.es.controller.TestController",
+          "port": 55070
+        }
+      },
+      {
+        "_index": "logstash-2020.07.06",
+        "_type": "doc",
+        "_id": "LUReI3MBGmQkdl0oiE3B",
+        "_score": 1,
+        "_source": {
+          "@version": 1,
+          "message": "error级别日志",
+          "thread_name": "http-nio-8080-exec-5",
+          "@timestamp": "2020-07-06T09:04:24.655Z",
+          "level_value": 40000,
+          "host": "192.168.253.1",
+          "level": "ERROR",
+          "logger_name": "com.colin.es.controller.TestController",
+          "port": 55070
+        }
+      },
+      {
+        "_index": "logstash-2020.07.06",
+        "_type": "doc",
+        "_id": "dEReI3MBGmQkdl0o6U0j",
+        "_score": 1,
+        "_source": {
+          "@version": 1,
+          "message": "error级别日志",
+          "thread_name": "http-nio-8080-exec-10",
+          "@timestamp": "2020-07-06T09:04:49.333Z",
+          "level_value": 40000,
+          "host": "192.168.253.1",
+          "level": "ERROR",
+          "logger_name": "com.colin.es.controller.TestController",
+          "port": 55070
+        }
+      },
+      {
+        "_index": "logstash-2020.07.06",
+        "_type": "doc",
+        "_id": "p0QjI3MBGmQkdl0oHCtO",
+        "_score": 1,
+        "_source": {
+          "@version": 1,
+          "message": "warn级别日志",
+          "thread_name": "http-nio-8080-exec-9",
+          "@timestamp": "2020-07-06T07:59:29.220Z",
+          "level_value": 30000,
+          "host": "192.168.253.1",
+          "level": "WARN",
+          "logger_name": "com.colin.es.controller.TestController",
+          "port": 55070
+        }
+      }
+    ]
+  }
+}
+```
+
+- 修改 log-es.conf,添加一个filter
+
+  ```properties
+  filter {
+       json {
+       	 # 解析 message 存入es，此时项目中loger.info("") 中需要是json字符串
+           source => "message"
+           #移除的字段，不会存入es
+           remove_field => ["message","port","thread_name","logger_name","@version","level_value","tags"]
+       }
+       date {
+       	# 匹配日志信息中的 createtime ，替换 @timestamp 的值
+          match => [ "createtime", "yyyy-MM-dd HH:mm:ss"]
+          target => [ "@timestamp" ]
+          timezone => "Asia/Shanghai"
+      }
+  }
+  ```
+
+  - 完整配置文件
+
+    ```properties
+    input {
+        tcp {
+        mode => "server"
+        host => "192.168.253.130"
+        port => 7000
+        codec => json_lines
+      }
+    
+    }
+    filter {
+         json {
+             source => "message"
+             remove_field => ["message","port","thread_name","logger_name","@version","level_value","tags"]
+         }
+         date {
+            match => [ "createtime", "yyyy-MM-dd HH:mm:ss"]
+            target => [ "@timestamp" ]
+            timezone => "Asia/Shanghai"
+        }
+    }
+    output {
+        elasticsearch {
+            hosts => ["192.168.253.130:9200"]
+        }
+        stdout{
+           codec => json_lines
+        }
+    }
+    ```
+
+    
+
+  - 日志输出改造
+
+    ```java
+    Map<String,Object> infoMap = new HashMap<String,Object>();
+            infoMap.put("msg","info级别日志");
+            infoMap.put("module","系统管理");
+            logger.info(JsonUtils.toString(infoMap));
+    ```
+
+  - 此时，会将json对象中的，msg、module解析出来存入es，同时还有logstash自动添加的 @timestamp、host、level字段，结果如下：
+
+    ``` json
+    {
+      "took": 3,
+      "timed_out": false,
+      "_shards": {
+        "total": 5,
+        "successful": 5,
+        "skipped": 0,
+        "failed": 0
+      },
+      "hits": {
+        "total": 1,
+        "max_score": 1,
+        "hits": [
+          {
+            "_index": "logstash-2020.07.06",
+            "_type": "doc",
+            "_id": "10RxI3MBGmQkdl0odleB",
+            "_score": 1,
+            "_source": {
+              "@timestamp": "2020-07-06T09:25:04.559Z",
+              "host": "192.168.253.1",
+              "msg": "info级别日志",
+              "level": "INFO",
+              "module": "系统管理"
+            }
+          }
+        ]
+      }
+    }
+    ```
+
+- es中logstash的默认模板
+
+  ``` json
+  "logstash": {
+      "order": 0,
+      "version": 60001,
+      "index_patterns": [
+        "logstash-*"
+      ],
+      "settings": {
+        "index": {
+          "refresh_interval": "5s"
+        }
+      },
+      "mappings": {
+        "_default_": {
+          "dynamic_templates": [
+            {
+              "message_field": {
+                "path_match": "message",
+                "match_mapping_type": "string",
+                "mapping": {
+                  "type": "text",
+                  "norms": false
+                }
+              }
+            },
+            {
+              "string_fields": {
+                "match": "*",
+                "match_mapping_type": "string",
+                "mapping": {
+                  "type": "text",
+                  "norms": false,
+                  "fields": {
+                    "keyword": {
+                      "type": "keyword",
+                      "ignore_above": 256
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "@timestamp": {
+              "type": "date"
+            },
+            "@version": {
+              "type": "keyword"
+            },
+            "geoip": {
+              "dynamic": true,
+              "properties": {
+                "ip": {
+                  "type": "ip"
+                },
+                "location": {
+                  "type": "geo_point"
+                },
+                "latitude": {
+                  "type": "half_float"
+                },
+                "longitude": {
+                  "type": "half_float"
+                }
+              }
+            }
+          }
+        }
+      },
+      "aliases": {}
+    }
+  ```
+
+  - 根据默认模板修改一个自定义模板，order大于默认模板即可，logstash 使用默认 type 名字为 doc，所以将"_ default_" 直接写为 ”doc“，添加msg、module字段映射并使用ik分词；并且添加别名：aliases
+
+  ``` json
+  PUT _template/mylogstash
+  {
+      "order": 1,
+      "index_patterns": [
+        "logstash-*"
+      ],
+      "settings": {
+        "index": {
+          "refresh_interval": "5s"
+        }
+      },
+      "mappings": {
+        "doc": {
+          "dynamic_templates": [
+            {
+              "message_field": {
+                "path_match": "message",
+                "match_mapping_type": "string",
+                "mapping": {
+                  "type": "text",
+                  "analyzer": "ik_smart",
+                  "search_analyzer": "ik_smart",
+                  "norms": false
+                }
+              }
+            },
+            {
+              "string_fields": {
+                "match": "*",
+                "match_mapping_type": "string",
+                "mapping": {
+                  "type": "text",
+                  "norms": false,
+                  "fields": {
+                    "keyword": {
+                      "type": "keyword",
+                      "ignore_above": 256
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "@timestamp": {
+              "type": "date"
+            },
+            "@version": {
+              "type": "keyword"
+            },
+            "msg": {
+                "type": "text",
+                "analyzer": "ik_smart",
+                "search_analyzer": "ik_smart"
+            },
+            "module": {
+                "type": "text",
+                "analyzer": "ik_max_word",
+                "search_analyzer": "ik_max_word"
+            },
+            "createtime": {
+              "type": "date",
+              "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"
+            },
+            "geoip": {
+              "dynamic": true,
+              "properties": {
+                "ip": {
+                  "type": "ip"
+                },
+                "location": {
+                  "type": "geo_point"
+                },
+                "latitude": {
+                  "type": "half_float"
+                },
+                "longitude": {
+                  "type": "half_float"
+                }
+              }
+            }
+          }
+        }
+      },
+      "aliases": {
+        "logstash": {}
+      }
+    }
+  ```
+  
+  
